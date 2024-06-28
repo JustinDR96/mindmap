@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useRef } from 'react';
 import ReactFlow, {
   MiniMap,
   Controls,
@@ -9,11 +9,14 @@ import ReactFlow, {
   ReactFlowProvider,
   useReactFlow,
   Panel,
+  useStoreApi,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import '../node_modules/reactflow/dist/style.css';
 
 const flowKey = 'example-flow';
 const getNodeId = () => `randomnode_${+new Date()}`;
+const MIN_DISTANCE = 150;
 
 const initialNodes = [
   { id: '1', position: { x: 0, y: 0 }, data: { label: '1' } },
@@ -21,15 +24,109 @@ const initialNodes = [
 ];
 const initialEdges = [{ id: 'e1-2', source: '1', target: '2' }];
 
-function SaveRestore() {
+function Flow() {
+  const store = useStoreApi();
+  const reactFlowWrapper = useRef(null);
+  const connectingNodeId = useRef(null);
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [rfInstance, setRfInstance] = useState(null);
-  const { setViewport } = useReactFlow();
+  const { setViewport, screenToFlowPosition } = useReactFlow();
 
   const onConnect = useCallback(
-    (params) => setEdges((eds) => addEdge(params, eds)),
+    (params) => {
+      connectingNodeId.current = null;
+      setEdges((eds) => addEdge(params, eds));
+    },
     [setEdges]
+  );
+
+  const getClosestEdge = useCallback((node) => {
+    const { nodeInternals } = store.getState();
+    const storeNodes = Array.from(nodeInternals.values());
+
+    const closestNode = storeNodes.reduce(
+      (res, n) => {
+        if (n.id !== node.id) {
+          const dx = n.positionAbsolute.x - node.positionAbsolute.x;
+          const dy = n.positionAbsolute.y - node.positionAbsolute.y;
+          const d = Math.sqrt(dx * dx + dy * dy);
+
+          if (d < res.distance && d < MIN_DISTANCE) {
+            res.distance = d;
+            res.node = n;
+          }
+        }
+
+        return res;
+      },
+      {
+        distance: Number.MAX_VALUE,
+        node: null,
+      }
+    );
+
+    if (!closestNode.node) {
+      return null;
+    }
+
+    const closeNodeIsSource =
+      closestNode.node.positionAbsolute.x < node.positionAbsolute.x;
+
+    return {
+      id: closeNodeIsSource
+        ? `${closestNode.node.id}-${node.id}`
+        : `${node.id}-${closestNode.node.id}`,
+      source: closeNodeIsSource ? closestNode.node.id : node.id,
+      target: closeNodeIsSource ? node.id : closestNode.node.id,
+    };
+  }, [store]);
+
+  const onNodeDrag = useCallback(
+    (_, node) => {
+      const closeEdge = getClosestEdge(node);
+
+      setEdges((es) => {
+        const nextEdges = es.filter((e) => e.className !== 'temp');
+
+        if (
+          closeEdge &&
+          !nextEdges.find(
+            (ne) =>
+              ne.source === closeEdge.source && ne.target === closeEdge.target
+          )
+        ) {
+          closeEdge.className = 'temp';
+          nextEdges.push(closeEdge);
+        }
+
+        return nextEdges;
+      });
+    },
+    [getClosestEdge, setEdges]
+  );
+
+  const onNodeDragStop = useCallback(
+    (_, node) => {
+      const closeEdge = getClosestEdge(node);
+
+      setEdges((es) => {
+        const nextEdges = es.filter((e) => e.className !== 'temp');
+
+        if (
+          closeEdge &&
+          !nextEdges.find(
+            (ne) =>
+              ne.source === closeEdge.source && ne.target === closeEdge.target
+          )
+        ) {
+          nextEdges.push(closeEdge);
+        }
+
+        return nextEdges;
+      });
+    },
+    [getClosestEdge]
   );
 
   const onSave = useCallback(() => {
@@ -66,6 +163,37 @@ function SaveRestore() {
     setNodes((nds) => nds.concat(newNode));
   }, [setNodes]);
 
+  const onConnectStart = useCallback((_, { nodeId }) => {
+    connectingNodeId.current = nodeId;
+  }, []);
+
+  const onConnectEnd = useCallback(
+    (event) => {
+      if (!connectingNodeId.current) return;
+
+      const targetIsPane = event.target.classList.contains('react-flow__pane');
+
+      if (targetIsPane) {
+        const id = getNodeId();
+        const newNode = {
+          id,
+          position: screenToFlowPosition({
+            x: event.clientX,
+            y: event.clientY,
+          }),
+          data: { label: `Node ${id}` },
+          origin: [0.5, 0.0],
+        };
+
+        setNodes((nds) => nds.concat(newNode));
+        setEdges((eds) =>
+          eds.concat({ id, source: connectingNodeId.current, target: id })
+        );
+      }
+    },
+    [screenToFlowPosition, setNodes, setEdges]
+  );
+
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
       <ReactFlow
@@ -73,8 +201,15 @@ function SaveRestore() {
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeDrag={onNodeDrag}
+        onNodeDragStop={onNodeDragStop}
         onConnect={onConnect}
+        onConnectStart={onConnectStart}
+        onConnectEnd={onConnectEnd}
         onInit={setRfInstance}
+        fitView
+        fitViewOptions={{ padding: 2 }}
+        nodeOrigin={[0.5, 0]}
       >
         <Controls />
         <MiniMap />
@@ -92,7 +227,7 @@ function SaveRestore() {
 export default function App() {
   return (
     <ReactFlowProvider>
-      <SaveRestore />
+      <Flow />
     </ReactFlowProvider>
   );
 }
