@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useRef } from 'react';
+import React, { useCallback, useState, useRef, useEffect } from 'react';
 import ReactFlow, {
   MiniMap,
   Controls,
@@ -13,6 +13,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import '../node_modules/reactflow/dist/style.css';
+import '../node_modules/reactflow/dist/updatenode.css';
 
 const flowKey = 'example-flow';
 const getNodeId = () => `randomnode_${+new Date()}`;
@@ -23,6 +24,7 @@ const initialNodes = [
   { id: '2', position: { x: 0, y: 100 }, data: { label: '2' } },
 ];
 const initialEdges = [{ id: 'e1-2', source: '1', target: '2' }];
+const defaultViewport = { x: 0, y: 0, zoom: 1.5 };
 
 function Flow() {
   const store = useStoreApi();
@@ -32,6 +34,10 @@ function Flow() {
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [rfInstance, setRfInstance] = useState(null);
   const { setViewport, screenToFlowPosition } = useReactFlow();
+
+  const [nodeName, setNodeName] = useState('Node 1');
+  const [nodeBg, setNodeBg] = useState('#eee');
+  const [nodeHidden, setNodeHidden] = useState(false);
 
   const onConnect = useCallback(
     (params) => {
@@ -194,6 +200,50 @@ function Flow() {
     [screenToFlowPosition, setNodes, setEdges]
   );
 
+  useEffect(() => {
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id === '1') {
+          node.data = {
+            ...node.data,
+            label: nodeName,
+          };
+        }
+        return node;
+      })
+    );
+  }, [nodeName, setNodes]);
+
+  useEffect(() => {
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id === '1') {
+          node.style = { ...node.style, backgroundColor: nodeBg };
+        }
+        return node;
+      })
+    );
+  }, [nodeBg, setNodes]);
+
+  useEffect(() => {
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id === '1') {
+          node.hidden = nodeHidden;
+        }
+        return node;
+      })
+    );
+    setEdges((eds) =>
+      eds.map((edge) => {
+        if (edge.id === 'e1-2') {
+          edge.hidden = nodeHidden;
+        }
+        return edge;
+      })
+    );
+  }, [nodeHidden, setNodes, setEdges]);
+
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
       <ReactFlow
@@ -219,6 +269,22 @@ function Flow() {
           <button onClick={onRestore}>restore</button>
           <button onClick={onAdd}>add node</button>
         </Panel>
+        <div className="updatenode__controls">
+          <label>label:</label>
+          <input value={nodeName} onChange={(evt) => setNodeName(evt.target.value)} />
+
+          <label className="updatenode__bglabel">background:</label>
+          <input value={nodeBg} onChange={(evt) => setNodeBg(evt.target.value)} />
+
+          <div className="updatenode__checkboxwrapper">
+            <label>hidden:</label>
+            <input
+              type="checkbox"
+              checked={nodeHidden}
+              onChange={(evt) => setNodeHidden(evt.target.checked)}
+            />
+          </div>
+        </div>
       </ReactFlow>
     </div>
   );
