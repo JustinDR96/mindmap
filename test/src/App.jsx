@@ -264,7 +264,7 @@ function Flow() {
         <Controls />
         <MiniMap />
         <Background variant="dots" gap={12} size={1} />
-        <Panel position="top-right">
+        <Panel position="top-left">
           <button onClick={onSave}>save</button>
           <button onClick={onRestore}>restore</button>
           <button onClick={onAdd}>add node</button>
